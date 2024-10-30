@@ -30,15 +30,26 @@ object FileUtils {
   }
 
   @Throws(IOException::class)
-  fun generateOutputPath(internalDirectory: File, dirName: String, extension: String): String {
+  fun generateOutputPath(
+    internalDirectory: File,
+    dirName: String,
+    fileName: String,
+    extension: String
+  ): String {
     val directory = File(internalDirectory.toString() + File.separator + dirName)
     ensureDirExists(directory)
-    val filename = UUID.randomUUID().toString()
+    val filename = fileName.ifEmpty {
+      UUID.randomUUID().toString()
+    }
     return directory.toString() + File.separator + filename + extension
   }
 
   @Throws(IOException::class)
-  fun copyToOutputStream(destination: ParcelFileDescriptor, callback: PrintDocumentAdapter.WriteResultCallback, input: InputStream) {
+  fun copyToOutputStream(
+    destination: ParcelFileDescriptor,
+    callback: PrintDocumentAdapter.WriteResultCallback,
+    input: InputStream
+  ) {
     FileOutputStream(destination.fileDescriptor).use { fileOut ->
       input.copyTo(fileOut)
     }
@@ -53,8 +64,8 @@ object FileUtils {
   }
 
   @Throws(IOException::class)
-  fun generateFilePath(context: Context): String {
-    return generateOutputPath(context.cacheDir, "Print", ".pdf")
+  fun generateFilePath(context: Context, fileName: String): String {
+    return generateOutputPath(context.cacheDir, "Print", fileName, ".pdf")
   }
 
   @Throws(IOException::class)
