@@ -7,6 +7,7 @@ import android.print.PrintManager
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import android.print.PrintDocumentAdapter
+import android.util.Log
 import expo.modules.kotlin.exception.CodedException
 import expo.modules.kotlin.exception.Exceptions
 import expo.modules.kotlin.functions.Coroutine
@@ -47,6 +48,9 @@ class PrintModule : Module() {
   val context: Context
     get() = appContext.reactContext ?: throw Exceptions.ReactContextLost()
 
+  private val currentActivity
+    get() = appContext.activityProvider?.currentActivity ?: throw Exceptions.MissingActivity()
+
   private suspend fun print(options: PrintOptions) {
     withContext(Dispatchers.Main) {
       suspendCancellableCoroutine { continuation ->
@@ -60,16 +64,27 @@ class PrintModule : Module() {
               createPrintCallbacks(options, continuation)
             )
           } catch (e: Exception) {
-            continuation.resumeWithException(UnexpectedPrintException("There was an error while trying to print HTML ", e))
+            continuation.resumeWithException(
+              UnexpectedPrintException(
+                "There was an error while trying to print HTML ",
+                e
+              )
+            )
           }
         } else {
           // Prints from given URI (file path or base64 data URI starting with `data:*;base64,`)
           try {
-            val pda = PrintDocumentAdapter(WeakReference(context), continuation, options.uri)
+            val pda =
+              PrintDocumentAdapter(WeakReference(context), continuation, options.uri)
             printDocumentToPrinter(pda, options)
             continuation.resume(null)
           } catch (e: Exception) {
-            continuation.resumeWithException(UnexpectedPrintException("There was an error while trying to print file ", e))
+            continuation.resumeWithException(
+              UnexpectedPrintException(
+                "There was an error while trying to print file ",
+                e
+              )
+            )
           }
         }
       }
@@ -84,14 +99,21 @@ class PrintModule : Module() {
     // Create the files on IO thread
     withContext(Dispatchers.IO) {
       try {
-        filePath = FileUtils.generateFilePath(context)
+        /** This Code Is Modified @FileUtils.generateFilePath Method*/
+        filePath = FileUtils.generateFilePath(context, options.fileName)
+        // Log.e("Modified","Modified Code Called Created filePath with File Name =>$filePath")
       } catch (e: IOException) {
         throw UnexpectedPrintException("An unknown I/O exception occurred ", e)
       }
       try {
         outputFile = File(filePath)
-        outputFile.createNewFile()
-        fileDescriptor = ParcelFileDescriptor.open(outputFile, ParcelFileDescriptor.MODE_TRUNCATE or ParcelFileDescriptor.MODE_WRITE_ONLY)
+        if (!outputFile.exists()) {
+          outputFile.createNewFile()
+        }
+        fileDescriptor = ParcelFileDescriptor.open(
+          outputFile,
+          ParcelFileDescriptor.MODE_TRUNCATE or ParcelFileDescriptor.MODE_WRITE_ONLY
+        )
       } catch (e: IOException) {
         throw FileNotFoundException(e)
       }
@@ -109,9 +131,16 @@ class PrintModule : Module() {
     }
   }
 
-  private fun createPrintToFileCallbacks(options: PrintOptions, continuation: Continuation<FilePrintResult>): PrintPDFRenderTask.Callbacks {
+  private fun createPrintToFileCallbacks(
+    options: PrintOptions,
+    continuation: Continuation<FilePrintResult>
+  ): PrintPDFRenderTask.Callbacks {
     return object : PrintPDFRenderTask.Callbacks() {
-      override fun onRenderFinished(document: PrintDocumentAdapter, outputFile: File?, numberOfPages: Int) {
+      override fun onRenderFinished(
+        document: PrintDocumentAdapter,
+        outputFile: File?,
+        numberOfPages: Int
+      ) {
         val uri = FileUtils.uriFromFile(outputFile).toString()
         var base64: String? = null
         if (options.base64) {
@@ -123,6 +152,7 @@ class PrintModule : Module() {
           }
         }
         val result = FilePrintResult(uri, numberOfPages, base64)
+        //Log.e("FilePrintResult","FilePrintResult=> uri: $uri, numberOfPages: $numberOfPages, base64: $base64")
         continuation.resume(result)
       }
 
@@ -132,9 +162,16 @@ class PrintModule : Module() {
     }
   }
 
-  private fun createPrintCallbacks(options: PrintOptions, continuation: Continuation<Unit>): PrintPDFRenderTask.Callbacks {
+  private fun createPrintCallbacks(
+    options: PrintOptions,
+    continuation: Continuation<Unit>
+  ): PrintPDFRenderTask.Callbacks {
     return object : PrintPDFRenderTask.Callbacks() {
-      override fun onRenderFinished(document: PrintDocumentAdapter, outputFile: File?, numberOfPages: Int) {
+      override fun onRenderFinished(
+        document: PrintDocumentAdapter,
+        outputFile: File?,
+        numberOfPages: Int
+      ) {
         printDocumentToPrinter(document, options)
         continuation.resume(Unit)
       }
@@ -146,7 +183,7 @@ class PrintModule : Module() {
   }
 
   private fun printDocumentToPrinter(document: PrintDocumentAdapter, options: PrintOptions) {
-    (appContext.throwingActivity.getSystemService(Context.PRINT_SERVICE) as? PrintManager)?.let {
+    (currentActivity.getSystemService(Context.PRINT_SERVICE) as? PrintManager)?.let {
       val attributes = getAttributesFromOptions(options)
       it.print(jobName, document, attributes.build())
     } ?: throw PrintManagerNotAvailableException()
